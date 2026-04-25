@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0B0F1A">
+    <meta name="description" content="Professional Binary Trading Analyzer - Risk-controlled trading assistant with pattern recognition and performance analytics">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <title>Binary Trading Analyzer | Pro Level</title>
+    <!-- Tailwind CSS + Font Awesome -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            background-color: #0B0F1A;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        .card {
+            background: #121826;
+            border-radius: 20px;
+            transition: all 0.2s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #2D5AFF 0%, #1E3BA0 100%);
+            transition: all 0.2s;
+        }
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: scale(0.98);
+        }
+        .win-badge {
+            background: #00C85320;
+            color: #00C853;
+            border-left: 3px solid #00C853;
+        }
+        .loss-badge {
+            background: #FF174420;
+            color: #FF1744;
+            border-left: 3px solid #FF1744;
+        }
+        .warning-banner {
+            background: #FF6D0020;
+            border-left: 4px solid #FF6D00;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .stop-banner {
+            background: #D5000020;
+            border-left: 4px solid #D50000;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0B0F1A;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2D5AFF;
+            border-radius: 10px;
+        }
+        .signal-card {
+            background: linear-gradient(135deg, #1a2030 0%, #121826 100%);
+            border: 1px solid #2D5AFF30;
+        }
+        input, select, textarea {
+            background: #0B0F1A;
+            border: 1px solid #2D5AFF40;
+            border-radius: 12px;
+            padding: 10px 14px;
+            color: white;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #2D5AFF;
+        }
+        .glass-effect {
+            backdrop-filter: blur(10px);
+            background: rgba(18, 24, 38, 0.9);
+        }
+    </style>
+</head>
+<body class="text-white">
+
+    <!-- Mobile Container -->
+    <div class="max-w-7xl mx-auto px-3 sm:px-5 py-4 pb-24">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
+                    📊 Binary Analyzer
+                </h1>
+                <p class="text-gray-400 text-xs mt-1">Probability-based | Risk Controlled</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="showSettings()" class="p-2 rounded-xl bg-[#121826] hover:bg-[#1a2035] transition">
+                    <i class="fas fa-sliders-h text-blue-400"></i>
+                </button>
+                <button onclick="exportToCSV()" class="p-2 rounded-xl bg-[#121826] hover:bg-[#1a2035] transition">
+                    <i class="fas fa-download text-green-400"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- DISCLAIMER Banner -->
+        <div class="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 mb-4 text-xs text-yellow-300 text-center">
+            ⚠️ Probability-based analysis tool only. Trade at your own risk. Never guarantees profits.
+        </div>
+
+        <!-- Warning Banner Dynamic -->
+        <div id="warningBanner" class="hidden mb-4 p-3 rounded-xl text-sm font-medium"></div>
+
+        <!-- Dashboard Stats -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            <div class="card p-3 card-hover">
+                <div class="text-gray-400 text-xs">Total Capital</div>
+                <div class="text-xl font-bold" id="totalCapital">$0</div>
+            </div>
+            <div class="card p-3 card-hover">
+                <div class="text-gray-400 text-xs">Available</div>
+                <div class="text-xl font-bold text-green-400" id="availableBalance">$0</div>
+            </div>
+            <div class="card p-3 card-hover">
+                <div class="text-gray-400 text-xs">Today's P/L</div>
+                <div class="text-xl font-bold" id="todayPL">$0</div>
+            </div>
+            <div class="card p-3 card-hover">
+                <div class="text-gray-400 text-xs">Win Rate</div>
+                <div class="text-xl font-bold text-blue-400" id="winRate">0%</div>
+            </div>
+        </div>
+
+        <!-- Streak & Risk Meter -->
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <div class="card p-3">
+                <div class="text-gray-400 text-xs">🔥 Win Streak</div>
+                <div class="text-lg font-bold text-green-400" id="winStreak">0</div>
+                <div class="text-gray-400 text-xs">📉 Loss Streak</div>
+                <div class="text-lg font-bold text-red-400" id="lossStreak">0</div>
+            </div>
+            <div class="card p-3">
+                <div class="text-gray-400 text-xs">⚠️ Daily Risk Meter</div>
+                <div class="text-2xl font-bold" id="riskMeter">0%</div>
+                <div class="w-full bg-gray-700 rounded-full h-2 mt-2">
+                    <div id="riskBar" class="bg-orange-500 h-2 rounded-full" style="width: 0%"></div>
+                </div>
+                <div class="text-[10px] text-gray-400 mt-1">Max 5% daily</div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex gap-1 mb-5 bg-[#121826] p-1 rounded-2xl sticky top-2 z-10 glass-effect">
+            <button onclick="switchTab('trade')" id="tabTrade" class="flex-1 py-2 rounded-xl text-sm font-medium transition-all tab-active bg-blue-600">➕ Trade</button>
+            <button onclick="switchTab('journal')" id="tabJournal" class="flex-1 py-2 rounded-xl text-sm font-medium transition-all">📅 Journal</button>
+            <button onclick="switchTab('analytics')" id="tabAnalytics" class="flex-1 py-2 rounded-xl text-sm font-medium transition-all">📈 Analytics</button>
+            <button onclick="switchTab('patterns')" id="tabPatterns" class="flex-1 py-2 rounded-xl text-sm font-medium transition-all">🧠 Patterns</button>
+            <button onclick="switchTab('builder')" id="tabBuilder" class="flex-1 py-2 rounded-xl text-sm font-medium transition-all">⚙️ Builder</button>
+        </div>
+
+        <!-- ========== TRADE ENTRY SECTION ========== -->
+        <div id="tradeSection" class="space-y-4">
+            <!-- Signal Assistant Card -->
+            <div class="card p-4 signal-card">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold"><i class="fas fa-brain text-blue-400 mr-2"></i>Manual Signal Assistant</h3>
+                    <span class="text-xs text-gray-400">Based on your inputs</span>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <select id="signalTrend" class="text-sm">
+                        <option value="Uptrend">📈 Uptrend</option>
+                        <option value="Downtrend">📉 Downtrend</option>
+                        <option value="Sideways">➡️ Sideways</option>
+                    </select>
+                    <select id="signalZone" class="text-sm">
+                        <option value="Support">🛡️ Support</option>
+                        <option value="Resistance">⚡ Resistance</option>
+                        <option value="Neutral">🌊 Neutral</option>
+                    </select>
+                    <select id="signalPattern" class="text-sm">
+                        <option value="Engulfing">🕯️ Engulfing</option>
+                        <option value="Pin Bar">📌 Pin Bar</option>
+                        <option value="Doji">⏸️ Doji</option>
+                        <option value="Breakout">🚀 Breakout</option>
+                    </select>
+                    <select id="signalSession" class="text-sm">
+                        <option value="London">🇬🇧 London</option>
+                        <option value="NY">🇺🇸 NY</option>
+                        <option value="Asia">🇯🇵 Asia</option>
+                        <option value="Overlap">🔥 Overlap</option>
+                    </select>
+                </div>
+                <button onclick="generateManualSignal()" class="btn-primary w-full py-2 rounded-xl font-bold">
+                    <i class="fas fa-chart-line mr-2"></i>Generate Signal Analysis
+                </button>
+                <div id="signalOutput" class="mt-3 p-3 rounded-xl bg-black/30 hidden"></div>
+            </div>
+
+            <!-- Trade Entry Form -->
+            <div class="card p-4">
+                <h3 class="font-bold mb-3"><i class="fas fa-plus-circle text-green-400 mr-2"></i>Record Trade</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <select id="tradePair" class="text-sm">
+                        <option value="EUR/USD">EUR/USD</option>
+                        <option value="GBP/USD">GBP/USD</option>
+                        <option value="USD/JPY">USD/JPY</option>
+                        <option value="AUD/USD">AUD/USD</option>
+                    </select>
+                    <select id="tradeType" class="text-sm">
+                        <option value="CALL">📈 CALL (Up)</option>
+                        <option value="PUT">📉 PUT (Down)</option>
+                    </select>
+                    <select id="tradePattern" class="text-sm">
+                        <option value="Engulfing">Engulfing</option>
+                        <option value="Pin Bar">Pin Bar</option>
+                        <option value="Doji">Doji</option>
+                        <option value="Breakout">Breakout</option>
+                    </select>
+                    <select id="tradeTrend" class="text-sm">
+                        <option value="Uptrend">Uptrend</option>
+                        <option value="Downtrend">Downtrend</option>
+                        <option value="Sideways">Sideways</option>
+                    </select>
+                    <select id="tradeZone" class="text-sm">
+                        <option value="Support">Support</option>
+                        <option value="Resistance">Resistance</option>
+                        <option value="Neutral">Neutral</option>
+                    </select>
+                    <select id="tradeExpiry" class="text-sm">
+                        <option value="1m">1 Minute</option>
+                        <option value="2m">2 Minutes</option>
+                        <option value="5m">5 Minutes</option>
+                    </select>
+                    <input type="number" id="tradeAmount" placeholder="Amount ($)" class="text-sm col-span-2">
+                    <select id="tradeResult" class="text-sm">
+                        <option value="WIN">✅ WIN</option>
+                        <option value="LOSS">❌ LOSS</option>
+                    </select>
+                    <button onclick="addTrade()" class="btn-primary col-span-2 py-2 rounded-xl font-bold">
+                        <i class="fas fa-save mr-2"></i>Save Trade
+                    </button>
+                </div>
+            </div>
+
+            <!-- Recent Trades Preview -->
+            <div class="card p-4">
+                <h3 class="font-bold mb-2">🕒 Recent Trades</h3>
+                <div id="recentTradesList" class="space-y-2 max-h-64 overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <!-- ========== JOURNAL SECTION ========== -->
+        <div id="journalSection" class="hidden space-y-4">
+            <div class="card p-4">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold">📅 Daily Journal</h3>
+                    <button onclick="resetTodayConfirmation()" class="text-xs text-red-400"><i class="fas fa-trash"></i> Reset Today</button>
+                </div>
+                <div id="dailyJournalList" class="space-y-3 max-h-96 overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <!-- ========== ANALYTICS SECTION ========== -->
+        <div id="analyticsSection" class="hidden space-y-4">
+            <div class="card p-4">
+                <h3 class="font-bold mb-3">💰 P/L History (Last 7 Days)</h3>
+                <canvas id="plChart" height="200"></canvas>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="card p-4">
+                    <h3 class="font-bold mb-2">Win/Loss Ratio</h3>
+                    <canvas id="pieChart" height="180"></canvas>
+                </div>
+                <div class="card p-4">
+                    <h3 class="font-bold mb-2">📊 Session Performance</h3>
+                    <div id="sessionStats" class="text-sm space-y-2"></div>
+                </div>
+            </div>
+            <div class="card p-4">
+                <h3 class="font-bold mb-2">🏆 Best Trading Hours</h3>
+                <div id="heatmap" class="grid grid-cols-4 gap-2 text-center text-xs"></div>
+            </div>
+        </div>
+
+        <!-- ========== PATTERN ANALYSIS SECTION ========== -->
+        <div id="patternsSection" class="hidden space-y-4">
+            <div class="card p-4">
+                <h3 class="font-bold mb-3">🧠 Pattern Performance Leaderboard</h3>
+                <div id="patternLeaderboard" class="space-y-2"></div>
+            </div>
+            <div class="card p-4">
+                <h3 class="font-bold mb-3">📊 Pair-wise Analysis</h3>
+                <div id="pairAnalysis" class="space-y-2"></div>
+            </div>
+            <div class="bg-orange-500/10 border border-orange-500/30 rounded-xl p-3 text-sm">
+                <i class="fas fa-shield-alt mr-2"></i> Auto Rule: Patterns with &lt;60% win rate show warnings.
+            </div>
+        </div>
+
+        <!-- ========== STRATEGY BUILDER SECTION ========== -->
+        <div id="builderSection" class="hidden space-y-4">
+            <div class="card p-4">
+                <h3 class="font-bold mb-3">⚙️ Custom Strategy Builder</h3>
+                <div class="space-y-3">
+                    <input type="text" id="strategyName" placeholder="Strategy Name" class="w-full">
+                    <select id="strategyPattern" class="w-full">
+                        <option value="Engulfing">Engulfing</option>
+                        <option value="Pin Bar">Pin Bar</option>
+                        <option value="Doji">Doji</option>
+                        <option value="Breakout">Breakout</option>
+                    </select>
+                    <select id="strategyTrend" class="w-full">
+                        <option value="Uptrend">Uptrend</option>
+                        <option value="Downtrend">Downtrend</option>
+                    </select>
+                    <select id="strategyZone" class="w-full">
+                        <option value="Support">Support</option>
+                        <option value="Resistance">Resistance</option>
+                    </select>
+                    <button onclick="testStrategy()" class="btn-primary w-full py-2 rounded-xl">📊 Test Strategy on History</button>
+                    <div id="strategyResult" class="p-3 rounded-xl bg-black/30 text-sm hidden"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+        <div class="card p-5 max-w-md w-full">
+            <h3 class="font-bold text-xl mb-4">⚙️ Settings</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-sm text-gray-400">Total Capital ($)</label>
+                    <input type="number" id="setCapital" class="w-full mt-1">
+                </div>
+                <div>
+                    <label class="text-sm text-gray-400">Risk Mode</label>
+                    <select id="riskMode" class="w-full mt-1">
+                        <option value="1">Safe (1% per trade)</option>
+                        <option value="2">Medium (2% per trade)</option>
+                        <option value="3">Aggressive (3% per trade)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm text-gray-400">Currency</label>
+                    <select id="currency" class="w-full mt-1">
+                        <option value="$">USD ($)</option>
+                        <option value="€">EUR (€)</option>
+                        <option value="₹">INR (₹)</option>
+                    </select>
+                </div>
+                <button onclick="resetAllData()" class="w-full py-2 bg-red-600/30 text-red-400 rounded-xl">🔄 Reset All Data</button>
+                <button onclick="closeSettings()" class="btn-primary w-full py-2 rounded-xl">Save & Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
