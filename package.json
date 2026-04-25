@@ -1,0 +1,23 @@
+{
+  "name": "binary-trading-analyzer",
+  "version": "1.0.0",
+  "description": "Professional binary options trading analyzer with risk management",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve .",
+    "build": "echo 'Static app - no build needed'",
+    "test": "echo 'No tests configured'"
+  },
+  "keywords": [
+    "trading",
+    "binary-options",
+    "risk-management",
+    "pwa",
+    "analytics"
+  ],
+  "author": "Trading Analyzer Pro",
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "^14.0.0"
+  }
+}
