@@ -34,6 +34,7 @@ function generateDemoTrades() {
     const patterns = ['Engulfing', 'Pin Bar', 'Doji', 'Breakout'];
     const results = ['WIN', 'LOSS'];
     const pairs = ['EUR/USD', 'GBP/USD', 'USD/JPY'];
+    const sessions = ['London', 'NY', 'Asia', 'Overlap'];
     
     for (let i = 0; i < 25; i++) {
         const date = new Date();
@@ -42,11 +43,13 @@ function generateDemoTrades() {
             id: Date.now() + i,
             date: date.toISOString().split('T')[0],
             pair: pairs[Math.floor(Math.random() * pairs.length)],
+            session: sessions[Math.floor(Math.random() * sessions.length)],
             type: Math.random() > 0.5 ? 'CALL' : 'PUT',
             pattern: patterns[Math.floor(Math.random() * patterns.length)],
             trend: ['Uptrend', 'Downtrend', 'Sideways'][Math.floor(Math.random() * 3)],
             zone: ['Support', 'Resistance', 'Neutral'][Math.floor(Math.random() * 3)],
             expiry: ['1m', '2m', '5m'][Math.floor(Math.random() * 3)],
+            confidence: Math.floor(Math.random() * 40) + 50,
             amount: Math.floor(Math.random() * 200) + 50,
             result: Math.random() > 0.45 ? 'WIN' : 'LOSS',
             pl: 0
@@ -138,21 +141,44 @@ function getPairStats() {
 }
 
 function getSessionStats() {
-    // Simplified: map trade times based on expiry or random for demo
     const sessions = { London: { wins: 0, total: 0 }, NY: { wins: 0, total: 0 }, Asia: { wins: 0, total: 0 }, Overlap: { wins: 0, total: 0 } };
     appState.trades.forEach(t => {
-        let session = 'London';
-        const rand = Math.random();
-        if (rand < 0.25) session = 'NY';
-        else if (rand < 0.5) session = 'Asia';
-        else if (rand < 0.75) session = 'Overlap';
-        sessions[session].total++;
-        if (t.result === 'WIN') sessions[session].wins++;
+        if (sessions[t.session]) {
+            sessions[t.session].total++;
+            if (t.result === 'WIN') sessions[t.session].wins++;
+        }
     });
     Object.keys(sessions).forEach(s => {
         sessions[s].winRate = sessions[s].total ? (sessions[s].wins / sessions[s].total) * 100 : 0;
     });
     return sessions;
+}
+
+function getConfidenceAccuracy() {
+    const confidenceGroups = {
+        high: { wins: 0, total: 0 },    // 75-100%
+        medium: { wins: 0, total: 0 },  // 50-74%
+        low: { wins: 0, total: 0 }      // 0-49%
+    };
+    
+    appState.trades.forEach(t => {
+        if (t.confidence >= 75) {
+            confidenceGroups.high.total++;
+            if (t.result === 'WIN') confidenceGroups.high.wins++;
+        } else if (t.confidence >= 50) {
+            confidenceGroups.medium.total++;
+            if (t.result === 'WIN') confidenceGroups.medium.wins++;
+        } else {
+            confidenceGroups.low.total++;
+            if (t.result === 'WIN') confidenceGroups.low.wins++;
+        }
+    });
+    
+    return {
+        high: confidenceGroups.high.total ? (confidenceGroups.high.wins / confidenceGroups.high.total) * 100 : 0,
+        medium: confidenceGroups.medium.total ? (confidenceGroups.medium.wins / confidenceGroups.medium.total) * 100 : 0,
+        low: confidenceGroups.low.total ? (confidenceGroups.low.wins / confidenceGroups.low.total) * 100 : 0
+    };
 }
 
 // ========== SIGNAL GENERATOR (Rule-based) ==========
@@ -238,9 +264,36 @@ function generateManualSignal() {
         </div>
     `;
     
-    // Smart Alert if high confidence
+    // Smart Alert with Push Notification if high confidence
     if (confidence >= 75) {
         showAlert('✅ High probability setup detected!', 'info');
+        sendNotification('High Probability Setup', `${finalSignal} signal with ${confidence}% confidence`);
+    }
+}
+
+// ========== PUSH NOTIFICATIONS ==========
+async function requestNotificationPermission() {
+    if ('Notification' in window) {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+            showAlert('🔔 Notifications enabled. You will be alerted for trading signals.', 'info');
+        } else {
+            showAlert('❌ Notification permission denied. You can enable it in browser settings.', 'error');
+        }
+    } else {
+        showAlert('⚠️ Your browser does not support notifications', 'error');
+    }
+}
+
+function sendNotification(title, body) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+        // Check if the browser is in background (optional)
+        if (document.hidden) {
+            new Notification(title, { body, icon: '/icons/icon-192.png' });
+        } else {
+            // Still show but less intrusive
+            console.log(`Notification: ${title} - ${body}`);
+        }
     }
 }
 
@@ -248,6 +301,7 @@ function generateManualSignal() {
 function addTrade() {
     const today = new Date().toISOString().split('T')[0];
     const pair = document.getElementById('tradePair').value;
+    const session = document.getElementById('tradeSession').value;
     const type = document.getElementById('tradeType').value;
     const pattern = document.getElementById('tradePattern').value;
     const trend = document.getElementById('tradeTrend').value;
@@ -255,6 +309,10 @@ function addTrade() {
     const expiry = document.getElementById('tradeExpiry').value;
     let amount = parseFloat(document.getElementById('tradeAmount').value);
     const result = document.getElementById('tradeResult').value;
+    let confidence = parseInt(document.getElementById('tradeConfidence').value);
+    
+    if (isNaN(confidence)) confidence = 50;
+    confidence = Math.min(100, Math.max(0, confidence));
     
     if (!amount || amount <= 0) {
         amount = (appState.capital * (appState.riskMode / 100));
@@ -279,11 +337,13 @@ function addTrade() {
         id: Date.now(),
         date: today,
         pair,
+        session,
         type,
         pattern,
         trend,
         zone,
         expiry,
+        confidence,
         amount,
         result,
         pl
@@ -295,7 +355,13 @@ function addTrade() {
     clearTradeForm();
     showAlert(result === 'WIN' ? `✅ Trade recorded: +${appState.currency}${pl.toFixed(2)}` : `❌ Trade recorded: ${appState.currency}${pl.toFixed(2)}`, result === 'WIN' ? 'win' : 'loss');
     
-    // Update capital (simulate balance)
+    // Send notification for significant wins/losses
+    if (result === 'WIN' && pl > 100) {
+        sendNotification('Big Win! 🎉', `You made ${appState.currency}${pl.toFixed(2)} on ${pair}`);
+    } else if (result === 'LOSS' && pl < -100) {
+        sendNotification('Significant Loss ⚠️', `You lost ${appState.currency}${Math.abs(pl).toFixed(2)} on ${pair}`);
+    }
+    
     appState.capital += pl;
     if (appState.capital < 0) appState.capital = 0;
     saveData();
@@ -304,6 +370,7 @@ function addTrade() {
 
 function clearTradeForm() {
     document.getElementById('tradeAmount').value = '';
+    document.getElementById('tradeConfidence').value = '70';
     document.getElementById('tradeResult').value = 'WIN';
 }
 
@@ -316,6 +383,7 @@ function updateAllUI() {
     updatePatternLeaderboard();
     updateWarnings();
     updateRiskMeter();
+    updateConfidenceStats();
 }
 
 function updateDashboard() {
@@ -331,6 +399,29 @@ function updateDashboard() {
     const streaks = getStreaks();
     document.getElementById('winStreak').innerText = streaks.winStreak;
     document.getElementById('lossStreak').innerText = streaks.lossStreak;
+}
+
+function updateConfidenceStats() {
+    const accuracy = getConfidenceAccuracy();
+    const container = document.getElementById('confidenceStats');
+    if (!container) return;
+    
+    container.innerHTML = `
+        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+            <div class="p-2 bg-green-500/10 rounded">
+                <div class="text-green-400 font-bold">High (75%+)</div>
+                <div>${accuracy.high.toFixed(1)}% WR</div>
+            </div>
+            <div class="p-2 bg-yellow-500/10 rounded">
+                <div class="text-yellow-400 font-bold">Medium (50-74%)</div>
+                <div>${accuracy.medium.toFixed(1)}% WR</div>
+            </div>
+            <div class="p-2 bg-red-500/10 rounded">
+                <div class="text-red-400 font-bold">Low (0-49%)</div>
+                <div>${accuracy.low.toFixed(1)}% WR</div>
+            </div>
+        </div>
+    `;
 }
 
 function updateRiskMeter() {
@@ -357,7 +448,7 @@ function updateRecentTrades() {
                 <span class="font-medium">${t.pair}</span>
                 <span class="${t.result === 'WIN' ? 'text-green-400' : 'text-red-400'}">${t.result === 'WIN' ? '+' : ''}${appState.currency}${t.pl.toFixed(2)}</span>
             </div>
-            <div class="text-[10px] text-gray-400">${t.pattern} | ${t.trend}</div>
+            <div class="text-[10px] text-gray-400">${t.pattern} | ${t.trend} | ${t.confidence}% conf</div>
         </div>
     `).join('');
 }
@@ -373,10 +464,12 @@ function updateWarnings() {
         banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium stop-banner';
         banner.innerHTML = '⚠️ STOP: 2 consecutive losses detected. No more trades today.';
         banner.classList.remove('hidden');
+        sendNotification('Trading Halted', '2 consecutive losses detected. Stop trading for today.');
     } else if (risk >= 5) {
         banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium stop-banner';
         banner.innerHTML = '🚫 STOP: Daily risk limit of 5% reached. Trading halted.';
         banner.classList.remove('hidden');
+        sendNotification('Daily Risk Limit Reached', '5% daily risk limit exceeded. Trading halted.');
     } else if (risk >= 3) {
         banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium warning-banner';
         banner.innerHTML = '⚠️ Warning: Daily risk at ' + risk.toFixed(1) + '% / 5%. Trade carefully.';
@@ -477,14 +570,48 @@ function updateAnalytics() {
     // Session Stats
     const sessions = getSessionStats();
     const sessionDiv = document.getElementById('sessionStats');
-    sessionDiv.innerHTML = Object.entries(sessions).map(([name, data]) => `
-        <div class="flex justify-between"><span>${name}</span><span class="${data.winRate >= 60 ? 'text-green-400' : 'text-red-400'}">${data.winRate.toFixed(0)}% (${data.total} trades)</span></div>
-    `).join('');
+    if (sessionDiv) {
+        sessionDiv.innerHTML = Object.entries(sessions).map(([name, data]) => `
+            <div class="flex justify-between"><span>${name}</span><span class="${data.winRate >= 60 ? 'text-green-400' : 'text-red-400'}">${data.winRate.toFixed(0)}% (${data.total} trades)</span></div>
+        `).join('');
+    }
     
-    // Heatmap
-    const hours = ['00-06', '06-12', '12-18', '18-24'];
+    // Heatmap (improved with actual data)
     const heatmapDiv = document.getElementById('heatmap');
-    heatmapDiv.innerHTML = hours.map(h => `<div class="p-2 bg-blue-500/20 rounded-lg"><div>${h}</div><div class="text-xs">${Math.floor(Math.random() * 70 + 30)}%</div></div>`).join('');
+    const heatmapData = {
+        '00-06': { winRate: 0, total: 0 },
+        '06-12': { winRate: 0, total: 0 },
+        '12-18': { winRate: 0, total: 0 },
+        '18-24': { winRate: 0, total: 0 }
+    };
+    
+    // This would need actual time data, using session as proxy for demo
+    appState.trades.forEach(t => {
+        let hourSlot = '12-18';
+        if (t.session === 'Asia') hourSlot = '00-06';
+        else if (t.session === 'London') hourSlot = '06-12';
+        else if (t.session === 'NY') hourSlot = '12-18';
+        else if (t.session === 'Overlap') hourSlot = '12-18';
+        
+        heatmapData[hourSlot].total++;
+        if (t.result === 'WIN') heatmapData[hourSlot].winRate++;
+    });
+    
+    Object.keys(heatmapData).forEach(slot => {
+        if (heatmapData[slot].total > 0) {
+            heatmapData[slot].winRate = (heatmapData[slot].winRate / heatmapData[slot].total) * 100;
+        }
+    });
+    
+    if (heatmapDiv) {
+        heatmapDiv.innerHTML = Object.entries(heatmapData).map(([slot, data]) => `
+            <div class="p-2 ${data.winRate >= 60 ? 'bg-green-500/30' : (data.winRate >= 45 ? 'bg-yellow-500/30' : 'bg-red-500/30')} rounded-lg">
+                <div class="text-sm font-bold">${slot}</div>
+                <div class="text-xs">${data.winRate ? data.winRate.toFixed(0) : 0}% WR</div>
+                <div class="text-[10px] text-gray-400">${data.total} trades</div>
+            </div>
+        `).join('');
+    }
 }
 
 // ========== STRATEGY BUILDER ==========
@@ -498,6 +625,7 @@ function testStrategy() {
     const wins = matchingTrades.filter(t => t.result === 'WIN').length;
     const total = matchingTrades.length;
     const winRate = total ? (wins / total) * 100 : 0;
+    const totalPL = matchingTrades.reduce((sum, t) => sum + t.pl, 0);
     
     const resultDiv = document.getElementById('strategyResult');
     resultDiv.classList.remove('hidden');
@@ -505,6 +633,7 @@ function testStrategy() {
         <div class="font-bold mb-1">📊 "${name}" Backtest Results</div>
         <div>Trades found: ${total}</div>
         <div>Win rate: ${winRate.toFixed(1)}%</div>
+        <div>Total P/L: ${appState.currency}${totalPL.toFixed(2)}</div>
         <div>Risk level: ${winRate >= 65 ? '🟢 Low' : (winRate >= 50 ? '🟡 Medium' : '🔴 High')}</div>
         <div class="mt-2 text-xs text-gray-400">${winRate >= 65 ? '✅ This strategy shows promise.' : (winRate >= 50 ? '⚠️ Needs improvement. Consider filters.' : '❌ Avoid this combination.')}</div>
     `;
@@ -557,9 +686,9 @@ function exportToCSV() {
         showAlert('No trades to export', 'error');
         return;
     }
-    let csv = 'Date,Pair,Type,Pattern,Trend,Zone,Expiry,Amount,Result,P/L\n';
+    let csv = 'Date,Pair,Session,Type,Pattern,Trend,Zone,Expiry,Confidence,Amount,Result,P/L\n';
     appState.trades.forEach(t => {
-        csv += `${t.date},${t.pair},${t.type},${t.pattern},${t.trend},${t.zone},${t.expiry},${t.amount},${t.result},${t.pl}\n`;
+        csv += `${t.date},${t.pair},${t.session},${t.type},${t.pattern},${t.trend},${t.zone},${t.expiry},${t.confidence},${t.amount},${t.result},${t.pl}\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement('a');
@@ -575,6 +704,7 @@ function showAlert(message, type) {
     banner.classList.remove('hidden', 'stop-banner', 'warning-banner');
     if (type === 'stop') banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium stop-banner';
     else if (type === 'info') banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium bg-blue-500/20 border-l-4 border-blue-500';
+    else if (type === 'error') banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium bg-red-500/20 border-l-4 border-red-500';
     else banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium warning-banner';
     banner.innerHTML = message;
     setTimeout(() => {
@@ -612,4 +742,11 @@ if ('serviceWorker' in navigator) {
 
 // ========== BOOT ==========
 loadData();
-```
+
+// Add notification enable button event listener (call this when DOM is ready)
+document.addEventListener('DOMContentLoaded', () => {
+    const enableNotifBtn = document.getElementById('enableNotifications');
+    if (enableNotifBtn) {
+        enableNotifBtn.addEventListener('click', requestNotificationPermission);
+    }
+});
