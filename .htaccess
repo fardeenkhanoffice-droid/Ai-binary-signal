@@ -1,0 +1,29 @@
+# PWA & Trading App Configuration
+<IfModule mod_headers.c>
+    # Cache control for static assets
+    <FilesMatch "\.(js|css|json|png|ico)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    
+    # Service worker needs fresh cache
+    <Files "service-worker.js">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </Files>
+    
+    # Enable CORS if needed
+    Header set Access-Control-Allow-Origin "*"
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/javascript application/javascript application/json
+</IfModule>
