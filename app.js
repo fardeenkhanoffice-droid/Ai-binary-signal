@@ -506,4 +506,110 @@ function testStrategy() {
         <div>Trades found: ${total}</div>
         <div>Win rate: ${winRate.toFixed(1)}%</div>
         <div>Risk level: ${winRate >= 65 ? '🟢 Low' : (winRate >= 50 ? '🟡 Medium' : '🔴 High')}</div>
-        <div class="mt-2 text-xs text-gray-400">${winRa
+        <div class="mt-2 text-xs text-gray-400">${winRate >= 65 ? '✅ This strategy shows promise.' : (winRate >= 50 ? '⚠️ Needs improvement. Consider filters.' : '❌ Avoid this combination.')}</div>
+    `;
+}
+
+// ========== SETTINGS & UTILITIES ==========
+function showSettings() {
+    document.getElementById('setCapital').value = appState.capital;
+    document.getElementById('riskMode').value = appState.riskMode;
+    document.getElementById('currency').value = appState.currency;
+    document.getElementById('settingsModal').classList.remove('hidden');
+    document.getElementById('settingsModal').style.display = 'flex';
+}
+
+function closeSettings() {
+    const newCapital = parseFloat(document.getElementById('setCapital').value);
+    if (!isNaN(newCapital) && newCapital > 0) appState.capital = newCapital;
+    appState.riskMode = parseInt(document.getElementById('riskMode').value);
+    appState.currency = document.getElementById('currency').value;
+    saveData();
+    updateAllUI();
+    document.getElementById('settingsModal').style.display = 'none';
+}
+
+function resetAllData() {
+    if (confirm('⚠️ WARNING: This will delete ALL trading data. Are you sure?')) {
+        appState.trades = [];
+        appState.capital = 10000;
+        appState.riskMode = 2;
+        appState.currency = '$';
+        saveData();
+        updateAllUI();
+        closeSettings();
+        showAlert('All data has been reset.', 'info');
+    }
+}
+
+function resetTodayConfirmation() {
+    if (confirm('Reset only today\'s trades? This cannot be undone.')) {
+        const today = new Date().toISOString().split('T')[0];
+        appState.trades = appState.trades.filter(t => t.date !== today);
+        saveData();
+        updateAllUI();
+        showAlert('Today\'s trades cleared.', 'info');
+    }
+}
+
+function exportToCSV() {
+    if (!appState.trades.length) {
+        showAlert('No trades to export', 'error');
+        return;
+    }
+    let csv = 'Date,Pair,Type,Pattern,Trend,Zone,Expiry,Amount,Result,P/L\n';
+    appState.trades.forEach(t => {
+        csv += `${t.date},${t.pair},${t.type},${t.pattern},${t.trend},${t.zone},${t.expiry},${t.amount},${t.result},${t.pl}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `trades_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showAlert('CSV exported successfully', 'info');
+}
+
+function showAlert(message, type) {
+    const banner = document.getElementById('warningBanner');
+    banner.classList.remove('hidden', 'stop-banner', 'warning-banner');
+    if (type === 'stop') banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium stop-banner';
+    else if (type === 'info') banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium bg-blue-500/20 border-l-4 border-blue-500';
+    else banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium warning-banner';
+    banner.innerHTML = message;
+    setTimeout(() => {
+        if (document.getElementById('warningBanner').innerHTML === message) {
+            document.getElementById('warningBanner').classList.add('hidden');
+        }
+    }, 4000);
+}
+
+function switchTab(tab) {
+    const sections = ['trade', 'journal', 'analytics', 'patterns', 'builder'];
+    sections.forEach(t => {
+        const el = document.getElementById(t + 'Section');
+        if (el) el.classList.add('hidden');
+        const btn = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (btn) {
+            btn.classList.remove('bg-blue-600', 'tab-active');
+            btn.classList.add('bg-[#121826]', 'text-gray-400');
+        }
+    });
+    document.getElementById(tab + 'Section').classList.remove('hidden');
+    const activeBtn = document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+    if (activeBtn) {
+        activeBtn.classList.remove('bg-[#121826]', 'text-gray-400');
+        activeBtn.classList.add('bg-blue-600', 'text-white');
+    }
+}
+
+// ========== PWA REGISTRATION ==========
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js').then(reg => console.log('SW registered:', reg)).catch(err => console.log('SW error:', err));
+    });
+}
+
+// ========== BOOT ==========
+loadData();
+```
