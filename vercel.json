@@ -3,26 +3,44 @@
   "version": 2,
   "builds": [
     {
-      "src": "*.{html,js,css,json}",
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "app.js",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "manifest.json",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "service-worker.js",
       "use": "@vercel/static"
     }
   ],
   "routes": [
+    {
+      "src": "/service-worker.js",
+      "dest": "/service-worker.js",
+      "headers": {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Service-Worker-Allowed": "/"
+      }
+    },
+    {
+      "src": "/manifest.json",
+      "dest": "/manifest.json",
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
     {
       "src": "/(.*)",
       "dest": "/index.html"
     }
   ],
   "headers": [
-    {
-      "source": "/service-worker.js",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate"
-        }
-      ]
-    },
     {
       "source": "/(.*)",
       "headers": [
@@ -33,6 +51,10 @@
         {
           "key": "X-Frame-Options",
           "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
         }
       ]
     }
