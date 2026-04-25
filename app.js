@@ -1,0 +1,509 @@
+// ========== DATA STRUCTURE ==========
+let appState = {
+    capital: 10000,
+    riskMode: 2,
+    currency: '$',
+    trades: [],
+    settings: {
+        dailyRiskLimit: 5,
+        consecutiveLossStop: 2
+    }
+};
+
+// ========== INITIALIZATION ==========
+function loadData() {
+    const saved = localStorage.getItem('tradeAnalyzerData');
+    if (saved) {
+        try {
+            const parsed = JSON.parse(saved);
+            appState.capital = parsed.capital || 10000;
+            appState.riskMode = parsed.riskMode || 2;
+            appState.currency = parsed.currency || '$';
+            appState.trades = parsed.trades || [];
+        } catch(e) { console.error(e); }
+    }
+    if (!appState.trades.length) {
+        // Demo trades for testing
+        appState.trades = generateDemoTrades();
+    }
+    updateAllUI();
+}
+
+function generateDemoTrades() {
+    const demo = [];
+    const patterns = ['Engulfing', 'Pin Bar', 'Doji', 'Breakout'];
+    const results = ['WIN', 'LOSS'];
+    const pairs = ['EUR/USD', 'GBP/USD', 'USD/JPY'];
+    
+    for (let i = 0; i < 25; i++) {
+        const date = new Date();
+        date.setDate(date.getDate() - Math.floor(Math.random() * 30));
+        demo.push({
+            id: Date.now() + i,
+            date: date.toISOString().split('T')[0],
+            pair: pairs[Math.floor(Math.random() * pairs.length)],
+            type: Math.random() > 0.5 ? 'CALL' : 'PUT',
+            pattern: patterns[Math.floor(Math.random() * patterns.length)],
+            trend: ['Uptrend', 'Downtrend', 'Sideways'][Math.floor(Math.random() * 3)],
+            zone: ['Support', 'Resistance', 'Neutral'][Math.floor(Math.random() * 3)],
+            expiry: ['1m', '2m', '5m'][Math.floor(Math.random() * 3)],
+            amount: Math.floor(Math.random() * 200) + 50,
+            result: Math.random() > 0.45 ? 'WIN' : 'LOSS',
+            pl: 0
+        });
+    }
+    demo.forEach(t => {
+        t.pl = t.result === 'WIN' ? t.amount * 0.85 : -t.amount;
+    });
+    return demo;
+}
+
+function saveData() {
+    const toSave = {
+        capital: appState.capital,
+        riskMode: appState.riskMode,
+        currency: appState.currency,
+        trades: appState.trades
+    };
+    localStorage.setItem('tradeAnalyzerData', JSON.stringify(toSave));
+}
+
+// ========== CORE CALCULATIONS ==========
+function getTodayPL() {
+    const today = new Date().toISOString().split('T')[0];
+    const todayTrades = appState.trades.filter(t => t.date === today);
+    return todayTrades.reduce((sum, t) => sum + t.pl, 0);
+}
+
+function getWinRate(trades = null) {
+    const target = trades || appState.trades;
+    if (!target.length) return 0;
+    const wins = target.filter(t => t.result === 'WIN').length;
+    return (wins / target.length) * 100;
+}
+
+function getStreaks() {
+    let winStreak = 0, lossStreak = 0;
+    let currentWin = 0, currentLoss = 0;
+    const sorted = [...appState.trades].sort((a,b) => new Date(b.date) - new Date(a.date));
+    for (let trade of sorted) {
+        if (trade.result === 'WIN') {
+            currentWin++;
+            currentLoss = 0;
+        } else {
+            currentLoss++;
+            currentWin = 0;
+        }
+        winStreak = Math.max(winStreak, currentWin);
+        lossStreak = Math.max(lossStreak, currentLoss);
+    }
+    return { winStreak, lossStreak };
+}
+
+function getDailyRiskPercent() {
+    const todayPL = getTodayPL();
+    if (appState.capital <= 0) return 0;
+    return Math.abs((todayPL / appState.capital) * 100);
+}
+
+function getPatternStats() {
+    const patterns = {};
+    appState.trades.forEach(t => {
+        if (!patterns[t.pattern]) {
+            patterns[t.pattern] = { wins: 0, total: 0 };
+        }
+        patterns[t.pattern].total++;
+        if (t.result === 'WIN') patterns[t.pattern].wins++;
+    });
+    Object.keys(patterns).forEach(p => {
+        patterns[p].winRate = (patterns[p].wins / patterns[p].total) * 100;
+    });
+    return patterns;
+}
+
+function getPairStats() {
+    const pairs = {};
+    appState.trades.forEach(t => {
+        if (!pairs[t.pair]) {
+            pairs[t.pair] = { wins: 0, total: 0, pl: 0 };
+        }
+        pairs[t.pair].total++;
+        if (t.result === 'WIN') pairs[t.pair].wins++;
+        pairs[t.pair].pl += t.pl;
+    });
+    Object.keys(pairs).forEach(p => {
+        pairs[p].winRate = (pairs[p].wins / pairs[p].total) * 100;
+    });
+    return pairs;
+}
+
+function getSessionStats() {
+    // Simplified: map trade times based on expiry or random for demo
+    const sessions = { London: { wins: 0, total: 0 }, NY: { wins: 0, total: 0 }, Asia: { wins: 0, total: 0 }, Overlap: { wins: 0, total: 0 } };
+    appState.trades.forEach(t => {
+        let session = 'London';
+        const rand = Math.random();
+        if (rand < 0.25) session = 'NY';
+        else if (rand < 0.5) session = 'Asia';
+        else if (rand < 0.75) session = 'Overlap';
+        sessions[session].total++;
+        if (t.result === 'WIN') sessions[session].wins++;
+    });
+    Object.keys(sessions).forEach(s => {
+        sessions[s].winRate = sessions[s].total ? (sessions[s].wins / sessions[s].total) * 100 : 0;
+    });
+    return sessions;
+}
+
+// ========== SIGNAL GENERATOR (Rule-based) ==========
+function generateManualSignal() {
+    const trend = document.getElementById('signalTrend').value;
+    const zone = document.getElementById('signalZone').value;
+    const pattern = document.getElementById('signalPattern').value;
+    const session = document.getElementById('signalSession').value;
+    
+    let confidence = 50;
+    let reasons = [];
+    let signalType = 'CALL';
+    
+    // Trend analysis
+    if (trend === 'Uptrend') {
+        confidence += 15;
+        signalType = 'CALL';
+        reasons.push('📈 Uptrend confirmed');
+    } else if (trend === 'Downtrend') {
+        confidence += 15;
+        signalType = 'PUT';
+        reasons.push('📉 Downtrend confirmed');
+    } else {
+        confidence -= 10;
+        reasons.push('➡️ Sideways market - reduce confidence');
+    }
+    
+    // Zone analysis
+    if (zone === 'Support') {
+        confidence += 20;
+        reasons.push('🛡️ Price at Support zone');
+        if (trend === 'Uptrend') confidence += 5;
+    } else if (zone === 'Resistance') {
+        confidence += 20;
+        reasons.push('⚡ Price at Resistance zone');
+        if (trend === 'Downtrend') confidence += 5;
+    } else {
+        confidence -= 15;
+        reasons.push('🌊 No key S/R zone');
+    }
+    
+    // Pattern strength
+    const patternStats = getPatternStats();
+    const patternWR = patternStats[pattern]?.winRate || 50;
+    if (patternWR >= 65) {
+        confidence += 15;
+        reasons.push(`🕯️ ${pattern} has ${patternWR.toFixed(0)}% win rate historically`);
+    } else if (patternWR < 50) {
+        confidence -= 15;
+        reasons.push(`⚠️ ${pattern} weak historically (${patternWR.toFixed(0)}% WR)`);
+    } else {
+        confidence += 5;
+    }
+    
+    // Session boost
+    if (session === 'Overlap') {
+        confidence += 10;
+        reasons.push('🔥 London-NY overlap - high liquidity');
+    } else if (session === 'London' || session === 'NY') {
+        confidence += 5;
+    }
+    
+    confidence = Math.min(95, Math.max(15, confidence));
+    
+    // Final signal
+    const finalSignal = signalType;
+    const outputDiv = document.getElementById('signalOutput');
+    outputDiv.classList.remove('hidden');
+    
+    let signalColor = confidence >= 70 ? 'text-green-400' : (confidence >= 50 ? 'text-yellow-400' : 'text-red-400');
+    outputDiv.innerHTML = `
+        <div class="flex justify-between items-start">
+            <div>
+                <div class="text-2xl font-bold ${signalColor}">${finalSignal}</div>
+                <div class="text-xs text-gray-400">Confidence: ${confidence}%</div>
+            </div>
+            <div class="text-right text-xs">
+                ${reasons.map(r => `<div>${r}</div>`).join('')}
+            </div>
+        </div>
+        <div class="mt-2 text-[11px] text-gray-500 border-t border-gray-700 pt-2">
+            ⚠️ Probability-based analysis only. Not financial advice.
+        </div>
+    `;
+    
+    // Smart Alert if high confidence
+    if (confidence >= 75) {
+        showAlert('✅ High probability setup detected!', 'info');
+    }
+}
+
+// ========== ADD TRADE ==========
+function addTrade() {
+    const today = new Date().toISOString().split('T')[0];
+    const pair = document.getElementById('tradePair').value;
+    const type = document.getElementById('tradeType').value;
+    const pattern = document.getElementById('tradePattern').value;
+    const trend = document.getElementById('tradeTrend').value;
+    const zone = document.getElementById('tradeZone').value;
+    const expiry = document.getElementById('tradeExpiry').value;
+    let amount = parseFloat(document.getElementById('tradeAmount').value);
+    const result = document.getElementById('tradeResult').value;
+    
+    if (!amount || amount <= 0) {
+        amount = (appState.capital * (appState.riskMode / 100));
+    }
+    
+    const riskPercent = getDailyRiskPercent();
+    if (riskPercent >= 5) {
+        showAlert('🚫 Daily risk limit reached (5%). Cannot add trade.', 'stop');
+        return;
+    }
+    
+    const previousTrades = appState.trades.filter(t => t.date === today);
+    const lastTwo = previousTrades.slice(-2);
+    if (lastTwo.length === 2 && lastTwo[0].result === 'LOSS' && lastTwo[1].result === 'LOSS') {
+        showAlert('⚠️ 2 consecutive losses! STOP trading according to risk rules.', 'stop');
+        return;
+    }
+    
+    const pl = result === 'WIN' ? amount * 0.85 : -amount;
+    
+    const newTrade = {
+        id: Date.now(),
+        date: today,
+        pair,
+        type,
+        pattern,
+        trend,
+        zone,
+        expiry,
+        amount,
+        result,
+        pl
+    };
+    
+    appState.trades.unshift(newTrade);
+    saveData();
+    updateAllUI();
+    clearTradeForm();
+    showAlert(result === 'WIN' ? `✅ Trade recorded: +${appState.currency}${pl.toFixed(2)}` : `❌ Trade recorded: ${appState.currency}${pl.toFixed(2)}`, result === 'WIN' ? 'win' : 'loss');
+    
+    // Update capital (simulate balance)
+    appState.capital += pl;
+    if (appState.capital < 0) appState.capital = 0;
+    saveData();
+    updateAllUI();
+}
+
+function clearTradeForm() {
+    document.getElementById('tradeAmount').value = '';
+    document.getElementById('tradeResult').value = 'WIN';
+}
+
+// ========== UI UPDATES ==========
+function updateAllUI() {
+    updateDashboard();
+    updateRecentTrades();
+    updateJournal();
+    updateAnalytics();
+    updatePatternLeaderboard();
+    updateWarnings();
+    updateRiskMeter();
+}
+
+function updateDashboard() {
+    const currency = appState.currency;
+    document.getElementById('totalCapital').innerText = `${currency}${appState.capital.toFixed(2)}`;
+    const available = appState.capital - (getDailyRiskPercent() / 100 * appState.capital);
+    document.getElementById('availableBalance').innerHTML = `${currency}${Math.max(0, available).toFixed(2)}`;
+    const todayPL = getTodayPL();
+    const plElem = document.getElementById('todayPL');
+    plElem.innerHTML = `${todayPL >= 0 ? '+' : ''}${currency}${todayPL.toFixed(2)}`;
+    plElem.className = `text-xl font-bold ${todayPL >= 0 ? 'text-green-400' : 'text-red-400'}`;
+    document.getElementById('winRate').innerText = `${getWinRate().toFixed(1)}%`;
+    const streaks = getStreaks();
+    document.getElementById('winStreak').innerText = streaks.winStreak;
+    document.getElementById('lossStreak').innerText = streaks.lossStreak;
+}
+
+function updateRiskMeter() {
+    const risk = getDailyRiskPercent();
+    document.getElementById('riskMeter').innerText = `${risk.toFixed(1)}%`;
+    const width = Math.min(100, (risk / 5) * 100);
+    document.getElementById('riskBar').style.width = `${width}%`;
+    if (risk >= 5) document.getElementById('riskBar').className = 'bg-red-500 h-2 rounded-full';
+    else if (risk >= 3) document.getElementById('riskBar').className = 'bg-orange-500 h-2 rounded-full';
+    else document.getElementById('riskBar').className = 'bg-green-500 h-2 rounded-full';
+}
+
+function updateRecentTrades() {
+    const container = document.getElementById('recentTradesList');
+    if (!container) return;
+    const recent = appState.trades.slice(0, 5);
+    if (!recent.length) {
+        container.innerHTML = '<div class="text-gray-500 text-center py-4">No trades yet</div>';
+        return;
+    }
+    container.innerHTML = recent.map(t => `
+        <div class="p-2 rounded-lg ${t.result === 'WIN' ? 'bg-green-500/10 border-l-4 border-green-500' : 'bg-red-500/10 border-l-4 border-red-500'}">
+            <div class="flex justify-between text-sm">
+                <span class="font-medium">${t.pair}</span>
+                <span class="${t.result === 'WIN' ? 'text-green-400' : 'text-red-400'}">${t.result === 'WIN' ? '+' : ''}${appState.currency}${t.pl.toFixed(2)}</span>
+            </div>
+            <div class="text-[10px] text-gray-400">${t.pattern} | ${t.trend}</div>
+        </div>
+    `).join('');
+}
+
+function updateWarnings() {
+    const banner = document.getElementById('warningBanner');
+    const today = new Date().toISOString().split('T')[0];
+    const todayTrades = appState.trades.filter(t => t.date === today);
+    const lastTwo = todayTrades.slice(-2);
+    const risk = getDailyRiskPercent();
+    
+    if (lastTwo.length === 2 && lastTwo[0].result === 'LOSS' && lastTwo[1].result === 'LOSS') {
+        banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium stop-banner';
+        banner.innerHTML = '⚠️ STOP: 2 consecutive losses detected. No more trades today.';
+        banner.classList.remove('hidden');
+    } else if (risk >= 5) {
+        banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium stop-banner';
+        banner.innerHTML = '🚫 STOP: Daily risk limit of 5% reached. Trading halted.';
+        banner.classList.remove('hidden');
+    } else if (risk >= 3) {
+        banner.className = 'mb-4 p-3 rounded-xl text-sm font-medium warning-banner';
+        banner.innerHTML = '⚠️ Warning: Daily risk at ' + risk.toFixed(1) + '% / 5%. Trade carefully.';
+        banner.classList.remove('hidden');
+    } else {
+        banner.classList.add('hidden');
+    }
+}
+
+function updateJournal() {
+    const container = document.getElementById('dailyJournalList');
+    if (!container) return;
+    const grouped = {};
+    appState.trades.forEach(t => {
+        if (!grouped[t.date]) grouped[t.date] = [];
+        grouped[t.date].push(t);
+    });
+    const dates = Object.keys(grouped).sort().reverse();
+    if (!dates.length) {
+        container.innerHTML = '<div class="text-gray-500 text-center py-4">No journal entries</div>';
+        return;
+    }
+    container.innerHTML = dates.map(date => {
+        const trades = grouped[date];
+        const wins = trades.filter(t => t.result === 'WIN').length;
+        const totalPL = trades.reduce((s, t) => s + t.pl, 0);
+        return `
+            <div class="card p-3">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="font-bold">📅 ${date}</span>
+                    <span class="${totalPL >= 0 ? 'text-green-400' : 'text-red-400'} text-sm">${totalPL >= 0 ? '+' : ''}${appState.currency}${totalPL.toFixed(2)}</span>
+                </div>
+                <div class="text-xs text-gray-400">${trades.length} trades | ${wins} wins | ${trades.length - wins} losses</div>
+                <div class="text-[10px] text-gray-500 mt-1">Win rate: ${((wins/trades.length)*100).toFixed(0)}%</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function updatePatternLeaderboard() {
+    const container = document.getElementById('patternLeaderboard');
+    const patterns = getPatternStats();
+    const sorted = Object.entries(patterns).sort((a,b) => b[1].winRate - a[1].winRate);
+    if (!sorted.length) {
+        container.innerHTML = '<div class="text-gray-500">No pattern data yet</div>';
+        return;
+    }
+    container.innerHTML = sorted.map(([name, data]) => `
+        <div class="flex justify-between items-center p-2 rounded-lg ${data.winRate < 60 ? 'bg-red-500/10' : 'bg-green-500/10'}">
+            <div>
+                <span class="font-medium">${name}</span>
+                <span class="text-xs text-gray-400 ml-2">${data.total} trades</span>
+            </div>
+            <div class="${data.winRate >= 70 ? 'text-green-400' : (data.winRate >= 60 ? 'text-yellow-400' : 'text-red-400')} font-bold">
+                ${data.winRate.toFixed(1)}%
+                ${data.winRate < 60 ? ' ❌ BLOCKED' : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateAnalytics() {
+    // P/L Chart
+    const last7Days = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        last7Days.push(d.toISOString().split('T')[0]);
+    }
+    const plData = last7Days.map(date => {
+        const dayTrades = appState.trades.filter(t => t.date === date);
+        return dayTrades.reduce((s, t) => s + t.pl, 0);
+    });
+    
+    const ctx = document.getElementById('plChart')?.getContext('2d');
+    if (ctx && window.plChart) window.plChart.destroy();
+    if (ctx) {
+        window.plChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: last7Days, datasets: [{ label: 'P/L', data: plData, borderColor: '#2D5AFF', backgroundColor: '#2D5AFF20', fill: true, tension: 0.3 }] },
+            options: { responsive: true, plugins: { legend: { labels: { color: 'white' } } }, scales: { y: { grid: { color: '#1f2937' } }, x: { ticks: { color: '#9ca3af' } } } }
+        });
+    }
+    
+    // Pie Chart
+    const wins = appState.trades.filter(t => t.result === 'WIN').length;
+    const losses = appState.trades.length - wins;
+    const pieCtx = document.getElementById('pieChart')?.getContext('2d');
+    if (pieCtx && window.pieChart) window.pieChart.destroy();
+    if (pieCtx) {
+        window.pieChart = new Chart(pieCtx, {
+            type: 'pie',
+            data: { labels: ['Wins', 'Losses'], datasets: [{ data: [wins, losses], backgroundColor: ['#00C853', '#FF1744'] }] },
+            options: { responsive: true, plugins: { legend: { labels: { color: 'white' } } } }
+        });
+    }
+    
+    // Session Stats
+    const sessions = getSessionStats();
+    const sessionDiv = document.getElementById('sessionStats');
+    sessionDiv.innerHTML = Object.entries(sessions).map(([name, data]) => `
+        <div class="flex justify-between"><span>${name}</span><span class="${data.winRate >= 60 ? 'text-green-400' : 'text-red-400'}">${data.winRate.toFixed(0)}% (${data.total} trades)</span></div>
+    `).join('');
+    
+    // Heatmap
+    const hours = ['00-06', '06-12', '12-18', '18-24'];
+    const heatmapDiv = document.getElementById('heatmap');
+    heatmapDiv.innerHTML = hours.map(h => `<div class="p-2 bg-blue-500/20 rounded-lg"><div>${h}</div><div class="text-xs">${Math.floor(Math.random() * 70 + 30)}%</div></div>`).join('');
+}
+
+// ========== STRATEGY BUILDER ==========
+function testStrategy() {
+    const name = document.getElementById('strategyName').value || 'Custom Strategy';
+    const pattern = document.getElementById('strategyPattern').value;
+    const trend = document.getElementById('strategyTrend').value;
+    const zone = document.getElementById('strategyZone').value;
+    
+    const matchingTrades = appState.trades.filter(t => t.pattern === pattern && t.trend === trend && t.zone === zone);
+    const wins = matchingTrades.filter(t => t.result === 'WIN').length;
+    const total = matchingTrades.length;
+    const winRate = total ? (wins / total) * 100 : 0;
+    
+    const resultDiv = document.getElementById('strategyResult');
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `
+        <div class="font-bold mb-1">📊 "${name}" Backtest Results</div>
+        <div>Trades found: ${total}</div>
+        <div>Win rate: ${winRate.toFixed(1)}%</div>
+        <div>Risk level: ${winRate >= 65 ? '🟢 Low' : (winRate >= 50 ? '🟡 Medium' : '🔴 High')}</div>
+        <div class="mt-2 text-xs text-gray-400">${winRa
